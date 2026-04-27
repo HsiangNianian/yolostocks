@@ -3,7 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "clean": "rm -rf .next out",
     "dev": "next dev",
+    "dev:reset": "rm -rf .next out && next dev",
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
