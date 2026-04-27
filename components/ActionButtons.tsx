@@ -27,30 +27,32 @@ export function ActionButtons({
 
   return (
     <div className="grid gap-3">
-      <button
-        type="button"
-        onClick={() => {
-          onBuy();
-          play("buy");
-        }}
-        disabled={disabled}
-        className="rounded-2xl border border-phosphor/40 bg-phosphor/10 px-4 py-4 text-left transition hover:bg-phosphor/15 disabled:cursor-not-allowed disabled:opacity-40"
-      >
-        <div className="font-pixel text-xs text-phosphor">{t(locale, "actions.buy")}</div>
-        <div className="mt-2 text-xs text-phosphor/70">{t(locale, "actions.buyDesc")}</div>
-      </button>
-      <button
-        type="button"
-        onClick={() => {
-          onSell();
-          play("sell");
-        }}
-        disabled={disabled}
-        className="rounded-2xl border border-danger/40 bg-danger/10 px-4 py-4 text-left transition hover:bg-danger/15 disabled:cursor-not-allowed disabled:opacity-40"
-      >
-        <div className="font-pixel text-xs text-danger">{t(locale, "actions.sell")}</div>
-        <div className="mt-2 text-xs text-danger/70">{t(locale, "actions.sellDesc")}</div>
-      </button>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <button
+          type="button"
+          onClick={() => {
+            onBuy();
+            play("buy");
+          }}
+          disabled={disabled}
+          className="rounded-2xl border border-phosphor/40 bg-phosphor/10 px-4 py-4 text-left transition hover:bg-phosphor/15 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          <div className="font-pixel text-xs text-phosphor">{t(locale, "actions.buy")}</div>
+          <div className="mt-2 text-xs text-phosphor/70">{t(locale, "actions.buyDesc")}</div>
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            onSell();
+            play("sell");
+          }}
+          disabled={disabled}
+          className="rounded-2xl border border-danger/40 bg-danger/10 px-4 py-4 text-left transition hover:bg-danger/15 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          <div className="font-pixel text-xs text-danger">{t(locale, "actions.sell")}</div>
+          <div className="mt-2 text-xs text-danger/70">{t(locale, "actions.sellDesc")}</div>
+        </button>
+      </div>
       <div className="grid grid-cols-2 gap-3">
         <button
           type="button"

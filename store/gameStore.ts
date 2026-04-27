@@ -33,7 +33,11 @@ import type {
   TradeAnnotation,
 } from "@/lib/game/types";
 import { detectLocale, type Locale, type LocaleMode, pickText } from "@/lib/i18n";
-import { generateMarket } from "@/lib/market/generator";
+import {
+  extendMarketWorldEvents,
+  generateMarket,
+  LIVE_WORLD_EVENT_LOOKAHEAD_TICKS,
+} from "@/lib/market/generator";
 import type { Market, NewsEvent } from "@/lib/market/types";
 import {
   applyWorldAgentPreset,
@@ -209,22 +213,32 @@ export const useGameStore = create<GameStoreState>()(
 
           const previousTick = state.currentTick;
           const nextTick = Math.min(previousTick + 1, state.market.totalTicks - 1);
+          const market = extendMarketWorldEvents({
+            market: state.market,
+            worldAgent: state.activeWorldAgent,
+            uptoTick: nextTick + LIVE_WORLD_EVENT_LOOKAHEAD_TICKS,
+            sourceAgentName:
+              state.market.sourceAgentName ??
+              (state.activeWorldAgent
+                ? getWorldAgentDisplayName(state.settings.locale, state.activeWorldAgent)
+                : undefined),
+          });
           const triggeredNews = getTriggeredNews(
-            state.market.scheduledEvents,
+            market.scheduledEvents,
             previousTick,
             nextTick,
           );
           const newsQueue = [...state.newsQueue, ...triggeredNews].slice(-8);
           const latestNews = triggeredNews.at(-1) ?? state.newsQueue.at(-1) ?? null;
           const beforeSnapshot = getPortfolioSnapshot(
-            state.market,
+            market,
             state.positions,
             previousTick,
             state.cash,
             state.borrowed,
           );
           const afterSnapshot = getPortfolioSnapshot(
-            state.market,
+            market,
             state.positions,
             nextTick,
             state.cash,
@@ -245,6 +259,7 @@ export const useGameStore = create<GameStoreState>()(
 
           const baseState: GameStoreData = {
             ...state,
+            market,
             currentTick: nextTick,
             newsQueue,
             currentAgent,
@@ -784,6 +799,9 @@ function applyResolvedDecision(
     lastDecision: decision,
     lastNews: latestNews,
   };
+  const tradeAnnotation = shouldCreateTradeAnnotation(decision.action)
+    ? createTradeAnnotation(state, tradeState.positions, decision, source)
+    : null;
 
   const baseState: GameStoreData = {
     ...state,
@@ -793,11 +811,8 @@ function applyResolvedDecision(
     currentAgent,
     selectedTicker: decision.ticker || state.selectedTicker,
     marginCall: null,
-    tradeTimeline: shouldCreateTradeAnnotation(decision.action)
-      ? [
-          ...state.tradeTimeline,
-          createTradeAnnotation(state, decision, source),
-        ].slice(-240)
+    tradeTimeline: tradeAnnotation
+      ? [...state.tradeTimeline, tradeAnnotation].slice(-240)
       : state.tradeTimeline,
     decisionEngine: {
       ...state.decisionEngine,
@@ -860,9 +875,21 @@ function shouldCreateTradeAnnotation(action: Decision["action"]): boolean {
 
 function createTradeAnnotation(
   state: GameStoreData,
+  nextPositions: Position[],
   decision: Decision,
   source: DecisionSource,
-): TradeAnnotation {
+): TradeAnnotation | null {
+  const beforeQuantity = getPositionQuantity(state.positions, decision.ticker);
+  const afterQuantity = getPositionQuantity(nextPositions, decision.ticker);
+  const executedQuantity =
+    decision.action === "BUY" || decision.action === "LEVERAGE"
+      ? Math.max(0, afterQuantity - beforeQuantity)
+      : Math.max(0, beforeQuantity - afterQuantity);
+
+  if (executedQuantity <= 0.0001) {
+    return null;
+  }
+
   return {
     id: `${source}:${decision.action}:${decision.ticker}:${state.currentTick}:${state.tradeTimeline.length}`,
     tick: state.currentTick,
@@ -874,6 +901,7 @@ function createTradeAnnotation(
     executedPrice: state.market
       ? getTickerPrice(state.market, decision.ticker, state.currentTick)
       : 0,
+    executedQuantity: Math.round(executedQuantity * 10000) / 10000,
   };
 }
 
@@ -1067,6 +1095,10 @@ function sellTicker(
     cash: Math.round(nextCash * 100) / 100,
     borrowed: Math.round(nextBorrowed * 100) / 100,
   };
+}
+
+function getPositionQuantity(positions: Position[], ticker: string): number {
+  return positions.find((position) => position.ticker === ticker)?.quantity ?? 0;
 }
 
 function getPortfolioSnapshot(

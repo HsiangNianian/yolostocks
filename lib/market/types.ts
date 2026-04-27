@@ -16,6 +16,7 @@ export interface Candle {
 export interface MarketTicker {
   symbol: string;
   name: string;
+  basePrice?: number;
   candles: Candle[];
 }
 
@@ -45,4 +46,6 @@ export interface Market {
   tickers: MarketTicker[];
   featuredTicker: string;
   scheduledEvents: NewsEvent[];
+  startTimestampSec?: number;
+  sourceAgentName?: string;
 }

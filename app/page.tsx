@@ -208,6 +208,27 @@ export default function HomePage() {
                     {decisionEngine.lastError ? decisionEngine.lastError : t(locale, "engine.hint")}
                   </div>
                 </div>
+                <div className="rounded-3xl border border-white/10 bg-black/20 p-4">
+                  <div className="mb-3 flex items-center justify-between text-[10px] uppercase tracking-[0.28em] text-phosphor/55">
+                    <span>{t(locale, "positions.title")}</span>
+                    <span>{positions.length}</span>
+                  </div>
+                  <div className="grid gap-3">
+                    {positions.length === 0 ? (
+                      <div className="rounded-2xl border border-dashed border-white/10 p-6 text-sm text-white/45">
+                        {t(locale, "positions.empty")}
+                      </div>
+                    ) : null}
+                    {positions.map((position) => (
+                      <PositionCard
+                        key={position.ticker}
+                        position={position}
+                        currentPrice={getTickerPrice(market, position.ticker, currentTick)}
+                        locale={locale}
+                      />
+                    ))}
+                  </div>
+                </div>
                 <AgentPanel agent={currentAgent} locale={locale} />
               </aside>
 
@@ -239,37 +260,18 @@ export default function HomePage() {
                   />
                 </div>
                 <div className="grid gap-4 xl:grid-cols-[1fr_300px]">
-                  <div className="rounded-3xl border border-white/10 bg-black/20 p-4">
-                    <div className="mb-3 flex items-center justify-between text-[10px] uppercase tracking-[0.28em] text-phosphor/55">
-                      <span>{t(locale, "positions.title")}</span>
-                      <span>{positions.length}</span>
-                    </div>
-                    <div className="grid gap-3">
-                      {positions.length === 0 ? (
-                        <div className="rounded-2xl border border-dashed border-white/10 p-6 text-sm text-white/45">
-                          {t(locale, "positions.empty")}
-                        </div>
-                      ) : null}
-                      {positions.map((position) => (
-                        <PositionCard
-                          key={position.ticker}
-                          position={position}
-                          currentPrice={getTickerPrice(market, position.ticker, currentTick)}
-                          locale={locale}
-                        />
-                      ))}
-                    </div>
+                  <div className="xl:col-span-2 rounded-3xl border border-white/10 bg-black/20 p-4">
+                    <ActionButtons
+                      onBuy={forceBuy}
+                      onSell={forceSell}
+                      onSpeed={cycleSpeed}
+                      onMute={() => setMuted(!settings.muted)}
+                      speed={speed}
+                      muted={settings.muted}
+                      locale={locale}
+                      disabled={phase !== "running"}
+                    />
                   </div>
-                  <ActionButtons
-                    onBuy={forceBuy}
-                    onSell={forceSell}
-                    onSpeed={cycleSpeed}
-                    onMute={() => setMuted(!settings.muted)}
-                    speed={speed}
-                    muted={settings.muted}
-                    locale={locale}
-                    disabled={phase !== "running"}
-                  />
                 </div>
               </section>
 

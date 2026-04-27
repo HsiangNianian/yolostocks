@@ -9,6 +9,10 @@ import {
   weightedPick,
 } from "@/lib/utils/random";
 
+export const INITIAL_WORLD_EVENT_LOOKAHEAD_TICKS = 90;
+export const LIVE_WORLD_EVENT_LOOKAHEAD_TICKS = 90;
+const FALLBACK_START_TIMESTAMP_SEC = 1_700_000_000;
+
 const COMPANY_PREFIXES = [
   "NOVA",
   "LUNA",
@@ -67,28 +71,26 @@ export function generateMarketWithStart(
 
   const tickers = buildTickers(rng, totalTicks, style, startTimestampSec);
   const featuredTicker = pickOne(rng, tickers).symbol;
-  const scheduledEvents = worldAgent
-    ? buildWorldEvents({
-        tickers,
-        totalTicks,
-        style,
-        featuredTicker,
-        worldSeed,
-        worldAgent,
-        sourceAgentName,
-      })
-    : [];
-  const enrichedTickers = tickers.map((ticker) => ({
-    ...ticker,
-    candles: buildTickerSeries({
-      basePrice: ticker.candles[0]!.close,
-      style,
-      totalTicks,
-      startTimestampSec,
-      events: scheduledEvents.filter((event) => event.affectedTickers.includes(ticker.symbol)),
-      rng: createRng(`${worldSeed}:${ticker.symbol}:series`),
-    }),
-  }));
+  const allScheduledEvents = buildScheduledWorldEvents({
+    tickers,
+    totalTicks,
+    style,
+    featuredTicker,
+    worldSeed,
+    worldAgent,
+    sourceAgentName,
+  });
+  const scheduledEvents = allScheduledEvents.filter(
+    (event) => event.tick <= Math.min(totalTicks - 1, INITIAL_WORLD_EVENT_LOOKAHEAD_TICKS),
+  );
+  const enrichedTickers = rebuildTickers({
+    tickers,
+    scheduledEvents,
+    style,
+    totalTicks,
+    startTimestampSec,
+    worldSeed,
+  });
 
   return {
     seed: resolvedSeed,
@@ -100,7 +102,67 @@ export function generateMarketWithStart(
     tickers: enrichedTickers,
     featuredTicker,
     scheduledEvents: scheduledEvents.sort((left, right) => left.tick - right.tick),
+    startTimestampSec,
+    sourceAgentName,
   };
+}
+
+export function rebuildMarketWithScheduledEvents(
+  market: Market,
+  scheduledEvents: NewsEvent[],
+): Market {
+  const startTimestampSec =
+    market.startTimestampSec ?? market.tickers[0]?.candles[0]?.time ?? FALLBACK_START_TIMESTAMP_SEC;
+  const worldSeed = `${market.seed}:${market.worldClockKey}`;
+
+  return {
+    ...market,
+    tickers: rebuildTickers({
+      tickers: market.tickers,
+      scheduledEvents,
+      style: market.style,
+      totalTicks: market.totalTicks,
+      startTimestampSec,
+      worldSeed,
+    }),
+    scheduledEvents: scheduledEvents.sort((left, right) => left.tick - right.tick),
+    startTimestampSec,
+  };
+}
+
+export function extendMarketWorldEvents(input: {
+  market: Market;
+  worldAgent: WorldAgentConfig | null | undefined;
+  uptoTick: number;
+  sourceAgentName?: string;
+}): Market {
+  if (!input.worldAgent) {
+    return input.market;
+  }
+
+  const worldSeed = `${input.market.seed}:${input.market.worldClockKey}`;
+  const allScheduledEvents = buildScheduledWorldEvents({
+    tickers: input.market.tickers,
+    totalTicks: input.market.totalTicks,
+    style: input.market.style,
+    featuredTicker: input.market.featuredTicker,
+    worldSeed,
+    worldAgent: input.worldAgent,
+    sourceAgentName: input.sourceAgentName ?? input.market.sourceAgentName ?? "House Dealer",
+  });
+  const targetTick = Math.max(0, Math.min(input.market.totalTicks - 1, input.uptoTick));
+  const nextScheduledEvents = allScheduledEvents.filter((event) => event.tick <= targetTick);
+
+  if (
+    nextScheduledEvents.length === input.market.scheduledEvents.length &&
+    nextScheduledEvents.every(
+      (event, index) => input.market.scheduledEvents[index]?.id === event.id,
+    )
+  ) {
+    return input.market;
+  }
+
+  return rebuildMarketWithScheduledEvents(input.market, nextScheduledEvents);
 }
 
 function buildTickers(
@@ -134,6 +196,7 @@ function buildTickers(
     return {
       symbol: `${symbol}${index + 1}`,
       name,
+      basePrice,
       candles: [
         {
           time: startTimestampSec,
@@ -146,4 +209,46 @@ function buildTickers(
       ],
     };
   });
+}
+
+function buildScheduledWorldEvents(input: {
+  tickers: MarketTicker[];
+  totalTicks: number;
+  style: MarketStyle;
+  featuredTicker: string;
+  worldSeed: string;
+  worldAgent?: WorldAgentConfig;
+  sourceAgentName: string;
+}): NewsEvent[] {
+  if (!input.worldAgent) {
+    return [];
+  }
+
+  return buildWorldEvents({
+    ...input,
+    worldAgent: input.worldAgent,
+  }).sort((left, right) => left.tick - right.tick);
+}
+
+function rebuildTickers(input: {
+  tickers: MarketTicker[];
+  scheduledEvents: NewsEvent[];
+  style: MarketStyle;
+  totalTicks: number;
+  startTimestampSec: number;
+  worldSeed: string;
+}): MarketTicker[] {
+  return input.tickers.map((ticker) => ({
+    ...ticker,
+    candles: buildTickerSeries({
+      basePrice: ticker.basePrice ?? ticker.candles[0]?.open ?? ticker.candles[0]!.close,
+      style: input.style,
+      totalTicks: input.totalTicks,
+      startTimestampSec: input.startTimestampSec,
+      events: input.scheduledEvents.filter((event) =>
+        event.affectedTickers.includes(ticker.symbol),
+      ),
+      rng: createRng(`${input.worldSeed}:${ticker.symbol}:series`),
+    }),
+  }));
 }

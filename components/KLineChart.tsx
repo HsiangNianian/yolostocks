@@ -30,6 +30,7 @@ import {
 } from "@/lib/i18n";
 import type { Candle, NewsEvent } from "@/lib/market/types";
 import type { TradeAnnotation } from "@/lib/game/types";
+import { formatCurrency, formatPercent, formatPrice } from "@/lib/utils/formatters";
 
 type ChartAnnotation =
   | { kind: "world"; event: NewsEvent }
@@ -84,6 +85,7 @@ export function KLineChart({
     },
     [candles, events, trades],
   );
+  const currentMarkPrice = candles.at(-1)?.close ?? 0;
 
   annotationsByTimeRef.current = annotationsByTime;
   candleCountRef.current = candles.length;
@@ -276,17 +278,37 @@ export function KLineChart({
                 </div>
               ) : (
                 <div key={`trade-${annotation.trade.id}-${index}`}>
+                  {(() => {
+                    const pnl = getTradeRunningPnl(annotation.trade, currentMarkPrice);
+                    const pnlRatio = getTradeRunningPnlRatio(annotation.trade, currentMarkPrice);
+
+                    return (
+                      <>
                   <div className="flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.24em] text-amber/75">
                     <span>{pickText(locale, "Trade", "交易")}</span>
                     <span>{getActionLabel(locale, annotation.trade.action)}</span>
                     <span>{getDecisionSourceLabel(locale, annotation.trade.source)}</span>
                   </div>
                   <div className="mt-2 text-white/85">
-                    {annotation.trade.ticker} · {annotation.trade.executedPrice.toFixed(2)}
+                    {annotation.trade.ticker} · {formatPrice(annotation.trade.executedPrice, locale)} ·{" "}
+                    {pickText(locale, "Qty", "数量")} {annotation.trade.executedQuantity.toFixed(2)}
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-white/55">
+                    <span>
+                      {pickText(locale, "Now ", "现价")}
+                      {formatPrice(currentMarkPrice, locale)}
+                    </span>
+                    <span className={pnl >= 0 ? "text-phosphor" : "text-danger"}>
+                      {pickText(locale, "Current PnL ", "当前盈亏")}
+                      {formatCurrency(pnl, locale)} ({formatPercent(pnlRatio, locale)})
+                    </span>
                   </div>
                   <div className="mt-2 text-xs text-white/45">
                     {annotation.trade.reason}
                   </div>
+                      </>
+                    );
+                  })()}
                 </div>
               ),
             )}
@@ -396,4 +418,18 @@ function getTradeMarkerPosition(trade: TradeAnnotation): SeriesMarkerPosition {
   return trade.action === "BUY" || trade.action === "LEVERAGE"
     ? "belowBar"
     : "aboveBar";
+}
+
+function getTradeRunningPnl(trade: TradeAnnotation, currentPrice: number): number {
+  const direction = trade.action === "BUY" || trade.action === "LEVERAGE" ? 1 : -1;
+  return Math.round((currentPrice - trade.executedPrice) * trade.executedQuantity * direction * 100) / 100;
+}
+
+function getTradeRunningPnlRatio(trade: TradeAnnotation, currentPrice: number): number {
+  if (trade.executedPrice <= 0) {
+    return 0;
+  }
+
+  const direction = trade.action === "BUY" || trade.action === "LEVERAGE" ? 1 : -1;
+  return (currentPrice / trade.executedPrice - 1) * direction;
 }

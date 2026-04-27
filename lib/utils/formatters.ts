@@ -13,6 +13,15 @@ export function formatCurrency(value: number, locale: Locale): string {
   }).format(value);
 }
 
+export function formatPrice(value: number, locale: Locale): string {
+  return new Intl.NumberFormat(getIntlLocale(locale), {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(value);
+}
+
 export function formatPercent(value: number, locale: Locale): string {
   const formatter = new Intl.NumberFormat(getIntlLocale(locale), {
     minimumFractionDigits: 1,

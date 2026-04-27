@@ -44,6 +44,7 @@ export interface TradeAnnotation {
   reason: string;
   confidence: number;
   executedPrice: number;
+  executedQuantity: number;
 }
 
 export type DecisionEngineStatus = "idle" | "thinking" | "ready" | "fallback" | "error";
