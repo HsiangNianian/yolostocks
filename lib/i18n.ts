@@ -1,4 +1,9 @@
-import type { AgentPersonality, DecisionAction } from "@/lib/agent/types";
+import type {
+  AgentPersonality,
+  DecisionAction,
+  DecisionSource,
+} from "@/lib/agent/types";
+import type { DecisionEngineStatus } from "@/lib/game/types";
 import type { MarketStyle, NewsAccuracy, NewsEvent, NewsTone } from "@/lib/market/types";
 
 export type Locale = "en" | "zh";
@@ -18,7 +23,7 @@ const messages = {
     "lang.mode.manual": "Manual",
     "app.title": "YOLO AGENT",
     "app.tagline":
-      "Hire a probabilistic trading degenerate, watch the tape mutate in real time, and decide whether to interfere before the broker does.",
+      "Hire an AI-driven trading degenerate, watch the tape mutate in real time, and decide whether to interfere before the broker does.",
     "app.museumLink": "Enter Liquidation Museum",
     "idle.badge": "Vertical Slice",
     "idle.heading": "Build the casino first.",
@@ -32,6 +37,8 @@ const messages = {
     "metric.time": "Time",
     "metric.equity": "Equity",
     "metric.reserve": "Reserve",
+    "metric.engine": "Engine",
+    "metric.source": "Source",
     "metric.style": "Style",
     "metric.cash": "Cash",
     "metric.borrowed": "Borrowed",
@@ -73,6 +80,7 @@ const messages = {
     "event.margin.secondary": "Let It Die",
     "event.gameOver.primary": "Back To Lobby",
     "event.gameOver.secondary": "Museum",
+    "engine.hint": "Server-side AI runs on the Vercel route. Local heuristics only take over if the model call fails.",
   },
   zh: {
     "lang.auto": "自动",
@@ -82,7 +90,7 @@ const messages = {
     "lang.mode.manual": "手动切换",
     "app.title": "梭哈代理人",
     "app.tagline":
-      "雇一个概率驱动的炒股疯子，看着行情在浏览器里实时变形，然后决定要不要在券商先动手前强行干预。",
+      "雇一个 AI 驱动的炒股疯子，看着行情在浏览器里实时变形，然后决定要不要在券商先动手前强行干预。",
     "app.museumLink": "进入爆仓博物馆",
     "idle.badge": "首个垂直切片",
     "idle.heading": "先把赌场搭起来。",
@@ -96,6 +104,8 @@ const messages = {
     "metric.time": "时间",
     "metric.equity": "净值",
     "metric.reserve": "后备金",
+    "metric.engine": "决策引擎",
+    "metric.source": "决策来源",
     "metric.style": "市场风格",
     "metric.cash": "现金",
     "metric.borrowed": "借款",
@@ -137,6 +147,7 @@ const messages = {
     "event.margin.secondary": "让它死",
     "event.gameOver.primary": "回到大厅",
     "event.gameOver.secondary": "查看博物馆",
+    "engine.hint": "服务端 AI 跑在 Vercel 路由里。只有模型调用失败时，才会退回本地启发式策略。",
   },
 } as const;
 
@@ -194,6 +205,44 @@ const actionLabels: Record<DecisionAction, LocalizedText> = {
   PANIC_SELL: {
     en: "PANIC SELL",
     zh: "恐慌卖出",
+  },
+};
+
+const decisionEngineStatusLabels: Record<DecisionEngineStatus, LocalizedText> = {
+  idle: {
+    en: "idle",
+    zh: "空闲",
+  },
+  thinking: {
+    en: "thinking",
+    zh: "思考中",
+  },
+  ready: {
+    en: "ready",
+    zh: "已接线",
+  },
+  fallback: {
+    en: "fallback",
+    zh: "本地兜底",
+  },
+  error: {
+    en: "error",
+    zh: "错误",
+  },
+};
+
+const decisionSourceLabels: Record<DecisionSource, LocalizedText> = {
+  ai: {
+    en: "AI",
+    zh: "AI",
+  },
+  fallback: {
+    en: "fallback",
+    zh: "本地兜底",
+  },
+  player: {
+    en: "player",
+    zh: "玩家",
   },
 };
 
@@ -278,6 +327,24 @@ export function getPersonalityLabel(locale: Locale, personality: AgentPersonalit
 
 export function getActionLabel(locale: Locale, action: DecisionAction): string {
   return resolveText(locale, actionLabels[action]);
+}
+
+export function getDecisionEngineStatusLabel(
+  locale: Locale,
+  status: DecisionEngineStatus,
+): string {
+  return resolveText(locale, decisionEngineStatusLabels[status]);
+}
+
+export function getDecisionSourceLabel(
+  locale: Locale,
+  source: DecisionSource | null,
+): string {
+  if (!source) {
+    return locale === "zh" ? "无" : "none";
+  }
+
+  return resolveText(locale, decisionSourceLabels[source]);
 }
 
 export function getNewsToneLabel(locale: Locale, tone: NewsTone): string {

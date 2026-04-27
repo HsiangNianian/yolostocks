@@ -3,11 +3,34 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
-import { createRuntimeAgent, decideAction, evolveAgentEmotion, getTickerPrice, pickAgentQuote } from "@/lib/agent/decision";
 import { AGENT_TEMPLATES } from "@/lib/agent/agents";
-import type { AgentTemplate, Decision, RunningAgentState } from "@/lib/agent/types";
+import { buildAgentDecisionRequest, fetchAgentDecision } from "@/lib/agent/client";
+import {
+  createRuntimeAgent,
+  decideAction,
+  evolveAgentEmotion,
+  getTickerPrice,
+  pickAgentQuote,
+} from "@/lib/agent/decision";
+import type {
+  AgentTemplate,
+  Decision,
+  DecisionSource,
+  RunningAgentState,
+} from "@/lib/agent/types";
+import {
+  AI_DECISION_STALE_TICKS,
+  shouldRequestAgentDecision,
+} from "@/lib/game/decisionLoop";
 import { getTriggeredNews } from "@/lib/game/events";
-import type { GamePhase, GameResult, MarginCall, MuseumRecord, Position } from "@/lib/game/types";
+import type {
+  DecisionEngineState,
+  GamePhase,
+  GameResult,
+  MarginCall,
+  MuseumRecord,
+  Position,
+} from "@/lib/game/types";
 import { detectLocale, type Locale, type LocaleMode, pickText } from "@/lib/i18n";
 import { generateMarket } from "@/lib/market/generator";
 import type { Market, NewsEvent } from "@/lib/market/types";
@@ -32,6 +55,7 @@ export interface GameStoreState {
   selectedTicker: string | null;
   currentTick: number;
   marginCall: MarginCall | null;
+  decisionEngine: DecisionEngineState;
   museumRecords: MuseumRecord[];
   settings: {
     muted: boolean;
@@ -41,6 +65,7 @@ export interface GameStoreState {
   gameResult: GameResult | null;
   startGame: (agentId: string, seed?: string) => void;
   tick: () => void;
+  requestAgentDecisionIfNeeded: (force?: boolean) => Promise<void>;
   forceBuy: () => void;
   forceSell: () => void;
   selectTicker: (ticker: string) => void;
@@ -53,28 +78,56 @@ export interface GameStoreState {
   returnToLobby: () => void;
 }
 
-const initialState = {
-  phase: "idle" as GamePhase,
+type GameStoreActionKeys =
+  | "startGame"
+  | "tick"
+  | "requestAgentDecisionIfNeeded"
+  | "forceBuy"
+  | "forceSell"
+  | "selectTicker"
+  | "cycleSpeed"
+  | "setMuted"
+  | "setLocale"
+  | "useAutoLocale"
+  | "hydrateLocale"
+  | "resolveMarginCall"
+  | "returnToLobby";
+
+type GameStoreData = Omit<GameStoreState, GameStoreActionKeys>;
+
+function createInitialDecisionEngine(): DecisionEngineState {
+  return {
+    status: "idle",
+    lastSource: null,
+    lastError: null,
+    lastRequestedTick: null,
+    lastAppliedTick: null,
+  };
+}
+
+const initialState: GameStoreData = {
+  phase: "idle",
   agents: AGENT_TEMPLATES,
   currentAgent: null,
   market: null,
-  positions: [] as Position[],
+  positions: [],
   cash: STARTING_CASH,
   reserveCash: STARTING_RESERVE,
   borrowed: 0,
-  equityHistory: [] as number[],
-  newsQueue: [] as NewsEvent[],
-  speed: 1 as const,
+  equityHistory: [],
+  newsQueue: [],
+  speed: 1,
   selectedTicker: null,
   currentTick: 0,
-  marginCall: null as MarginCall | null,
-  museumRecords: [] as MuseumRecord[],
+  marginCall: null,
+  decisionEngine: createInitialDecisionEngine(),
+  museumRecords: [],
   settings: {
     muted: false,
-    locale: "en" as Locale,
-    localeMode: "auto" as LocaleMode,
+    locale: "en",
+    localeMode: "auto",
   },
-  gameResult: null as GameResult | null,
+  gameResult: null,
 };
 
 export const useGameStore = create<GameStoreState>()(
@@ -82,7 +135,8 @@ export const useGameStore = create<GameStoreState>()(
     (set, get) => ({
       ...initialState,
       startGame: (agentId, seed) => {
-        const agentTemplate = get().agents.find((agent) => agent.id === agentId) ?? AGENT_TEMPLATES[0];
+        const agentTemplate =
+          get().agents.find((agent) => agent.id === agentId) ?? AGENT_TEMPLATES[0];
         const market = generateMarket(seed);
         const locale = get().settings.locale;
 
@@ -100,18 +154,28 @@ export const useGameStore = create<GameStoreState>()(
           selectedTicker: market.tickers[0]?.symbol ?? null,
           currentTick: 0,
           marginCall: null,
+          decisionEngine: createInitialDecisionEngine(),
           gameResult: null,
         });
       },
       tick: () => {
         set((state) => {
-          if (state.phase !== "running" || !state.market || !state.currentAgent || state.marginCall) {
+          if (
+            state.phase !== "running" ||
+            !state.market ||
+            !state.currentAgent ||
+            state.marginCall
+          ) {
             return state;
           }
 
           const previousTick = state.currentTick;
           const nextTick = Math.min(previousTick + 1, state.market.totalTicks - 1);
-          const triggeredNews = getTriggeredNews(state.market.scheduledEvents, previousTick, nextTick);
+          const triggeredNews = getTriggeredNews(
+            state.market.scheduledEvents,
+            previousTick,
+            nextTick,
+          );
           const newsQueue = [...state.newsQueue, ...triggeredNews].slice(-8);
           const latestNews = triggeredNews.at(-1) ?? state.newsQueue.at(-1) ?? null;
           const beforeSnapshot = getPortfolioSnapshot(
@@ -121,63 +185,32 @@ export const useGameStore = create<GameStoreState>()(
             state.cash,
             state.borrowed,
           );
-
-          const decision = decideAction({
-            agent: state.currentAgent,
-            market: state.market,
-            currentTick: nextTick,
-            positions: state.positions,
-            newsQueue,
-            equity: beforeSnapshot.equity,
-            cash: state.cash,
-            borrowed: state.borrowed,
-            locale: state.settings.locale,
-            rng: createRng(`${state.market.seed}:${state.currentAgent.id}:${nextTick}`),
-          });
-
-          const tradeState = applyDecision(
-            state.market,
-            nextTick,
-            state.positions,
-            state.cash,
-            state.borrowed,
-            decision,
-          );
-
           const afterSnapshot = getPortfolioSnapshot(
             state.market,
-            tradeState.positions,
+            state.positions,
             nextTick,
-            tradeState.cash,
-            tradeState.borrowed,
+            state.cash,
+            state.borrowed,
           );
 
           const currentAgent = {
             ...evolveAgentEmotion(
               {
                 ...state.currentAgent,
-                lastThought: decision.reason,
-                lastDecision: decision,
                 lastNews: latestNews,
               },
               afterSnapshot.equity - beforeSnapshot.equity,
               afterSnapshot.unrealizedPnl,
             ),
-            lastThought: decision.reason,
-            lastDecision: decision,
             lastNews: latestNews,
           };
 
-          const baseState = {
+          const baseState: GameStoreData = {
             ...state,
             currentTick: nextTick,
-            positions: tradeState.positions,
-            cash: tradeState.cash,
-            borrowed: tradeState.borrowed,
             newsQueue,
             currentAgent,
             equityHistory: [...state.equityHistory, afterSnapshot.equity],
-            selectedTicker: decision.ticker || state.selectedTicker,
           };
 
           if (afterSnapshot.equity <= 0) {
@@ -195,7 +228,7 @@ export const useGameStore = create<GameStoreState>()(
           const marginCall = getMarginCall(
             afterSnapshot.equity,
             afterSnapshot.exposure,
-            tradeState.borrowed,
+            state.borrowed,
             state.settings.locale,
           );
 
@@ -221,6 +254,132 @@ export const useGameStore = create<GameStoreState>()(
           return baseState;
         });
       },
+      requestAgentDecisionIfNeeded: async (force = false) => {
+        const snapshot = get();
+        if (
+          !snapshot.market ||
+          !snapshot.currentAgent ||
+          !shouldRequestAgentDecision({
+            force,
+            phase: snapshot.phase,
+            currentTick: snapshot.currentTick,
+            market: snapshot.market,
+            currentAgent: snapshot.currentAgent,
+            marginCall: snapshot.marginCall,
+            decisionEngine: snapshot.decisionEngine,
+            newsQueue: snapshot.newsQueue,
+          })
+        ) {
+          return;
+        }
+
+        const requestTick = snapshot.currentTick;
+        const requestPayload = buildAgentDecisionRequest({
+          locale: snapshot.settings.locale,
+          currentAgent: snapshot.currentAgent,
+          market: snapshot.market,
+          positions: snapshot.positions,
+          newsQueue: snapshot.newsQueue,
+          currentTick: snapshot.currentTick,
+          cash: snapshot.cash,
+          reserveCash: snapshot.reserveCash,
+          borrowed: snapshot.borrowed,
+          selectedTicker: snapshot.selectedTicker,
+        });
+
+        set((state) => ({
+          decisionEngine: {
+            ...state.decisionEngine,
+            status: "thinking",
+            lastError: null,
+            lastRequestedTick: requestTick,
+          },
+        }));
+
+        try {
+          const { decision, source } = await fetchAgentDecision(requestPayload);
+          set((state) => {
+            if (!canApplyAsyncDecision(state, requestTick)) {
+              return {
+                decisionEngine: settleDecisionEngine(state.decisionEngine),
+              };
+            }
+
+            return applyResolvedDecision(state, decision, source, {
+              status: "ready",
+              lastError: null,
+              lastRequestedTick: requestTick,
+            });
+          });
+        } catch (error) {
+          const message =
+            error instanceof Error ? error.message : "Unknown agent decision request error";
+
+          set((state) => {
+            if (!canApplyAsyncDecision(state, requestTick)) {
+              return {
+                decisionEngine: {
+                  ...settleDecisionEngine(state.decisionEngine),
+                  status: "error",
+                  lastError: message,
+                },
+              };
+            }
+
+            const market = state.market;
+            const currentAgent = state.currentAgent;
+            if (!market || !currentAgent) {
+              return {
+                decisionEngine: {
+                  ...state.decisionEngine,
+                  status: "error",
+                  lastError: message,
+                },
+              };
+            }
+
+            try {
+              const equity = getPortfolioSnapshot(
+                market,
+                state.positions,
+                state.currentTick,
+                state.cash,
+                state.borrowed,
+              ).equity;
+              const fallbackDecision = decideAction({
+                agent: currentAgent,
+                market,
+                currentTick: state.currentTick,
+                positions: state.positions,
+                newsQueue: state.newsQueue,
+                equity,
+                cash: state.cash,
+                borrowed: state.borrowed,
+                locale: state.settings.locale,
+                rng: createRng(
+                  `${market.seed}:${currentAgent.id}:${state.currentTick}:fallback`,
+                ),
+              });
+
+              return applyResolvedDecision(state, fallbackDecision, "fallback", {
+                status: "fallback",
+                lastError: message,
+                lastRequestedTick: requestTick,
+              });
+            } catch (fallbackError) {
+              return {
+                decisionEngine: {
+                  ...state.decisionEngine,
+                  status: "error",
+                  lastError:
+                    fallbackError instanceof Error ? fallbackError.message : message,
+                  lastRequestedTick: requestTick,
+                },
+              };
+            }
+          });
+        }
+      },
       forceBuy: () => {
         set((state) => {
           if (
@@ -233,31 +392,29 @@ export const useGameStore = create<GameStoreState>()(
             return state;
           }
 
-          const tradeState = buyTicker(
-            state.market,
-            state.currentTick,
-            state.positions,
-            state.cash,
-            state.borrowed,
-            state.selectedTicker,
-            0.18,
-            0.15,
-          );
-
-          return {
-            ...state,
-            positions: tradeState.positions,
-            cash: tradeState.cash,
-            borrowed: tradeState.borrowed,
-            currentAgent: {
-              ...state.currentAgent,
-              lastThought: pickText(
+          return applyResolvedDecision(
+            state,
+            {
+              action: "BUY",
+              ticker: state.selectedTicker,
+              confidence: 1,
+              reason: pickText(
                 state.settings.locale,
                 `You forced another buy on ${state.selectedTicker}. It did not look willing.`,
                 `你强行加仓 ${state.selectedTicker}，它看起来并不情愿。`,
               ),
+              sizeDelta: 0.18,
+              leverageDelta: 0.15,
             },
-          };
+            "player",
+            {
+              status:
+                state.decisionEngine.status === "thinking"
+                  ? "thinking"
+                  : getRestingDecisionStatus(state.decisionEngine),
+              lastError: null,
+            },
+          );
         });
       },
       forceSell: () => {
@@ -272,30 +429,29 @@ export const useGameStore = create<GameStoreState>()(
             return state;
           }
 
-          const tradeState = sellTicker(
-            state.market,
-            state.currentTick,
-            state.positions,
-            state.cash,
-            state.borrowed,
-            state.selectedTicker,
-            1,
-          );
-
-          return {
-            ...state,
-            positions: tradeState.positions,
-            cash: tradeState.cash,
-            borrowed: tradeState.borrowed,
-            currentAgent: {
-              ...state.currentAgent,
-              lastThought: pickText(
+          return applyResolvedDecision(
+            state,
+            {
+              action: "SELL",
+              ticker: state.selectedTicker,
+              confidence: 1,
+              reason: pickText(
                 state.settings.locale,
                 `You hit the cut-loss button and dumped ${state.selectedTicker} in one motion.`,
                 `你按下割肉键，把 ${state.selectedTicker} 整个扔了出去。`,
               ),
+              sizeDelta: 1,
+              leverageDelta: 0,
             },
-          };
+            "player",
+            {
+              status:
+                state.decisionEngine.status === "thinking"
+                  ? "thinking"
+                  : getRestingDecisionStatus(state.decisionEngine),
+              lastError: null,
+            },
+          );
         });
       },
       selectTicker: (ticker) => {
@@ -414,14 +570,14 @@ export const useGameStore = create<GameStoreState>()(
             reserveCash,
             marginCall: null,
             currentAgent: state.currentAgent
-                ? {
-                    ...state.currentAgent,
-                    lastThought: pickText(
-                      state.settings.locale,
-                      "Patch the margin first. Leave the rest to fate.",
-                      "先把保证金补上，剩下的交给命。",
-                    ),
-                  }
+              ? {
+                  ...state.currentAgent,
+                  lastThought: pickText(
+                    state.settings.locale,
+                    "Patch the margin first. Leave the rest to fate.",
+                    "先把保证金补上，剩下的交给命。",
+                  ),
+                }
               : null,
           };
         });
@@ -457,29 +613,23 @@ export const useGameStore = create<GameStoreState>()(
 );
 
 function finalizeRun(
-  state: Omit<
-    GameStoreState,
-    | "startGame"
-    | "tick"
-    | "forceBuy"
-    | "forceSell"
-    | "selectTicker"
-    | "cycleSpeed"
-    | "setMuted"
-    | "setLocale"
-    | "useAutoLocale"
-    | "hydrateLocale"
-    | "resolveMarginCall"
-    | "returnToLobby"
-  >,
+  state: GameStoreData,
   survived: boolean,
   description: string,
-): GameStoreState {
-  const finalEquity = state.equityHistory.at(-1) ?? STARTING_CASH;
+): GameStoreData {
+  const finalEquity = state.market
+    ? getPortfolioSnapshot(
+        state.market,
+        state.positions,
+        state.currentTick,
+        state.cash,
+        state.borrowed,
+      ).equity
+    : (state.equityHistory.at(-1) ?? STARTING_CASH);
   const locale = state.settings.locale;
-  const baseResult = {
+  const baseResult: GameStoreData = {
     ...state,
-    phase: "gameover" as const,
+    phase: "gameover",
     marginCall: null,
     gameResult: {
       title: survived
@@ -491,7 +641,7 @@ function finalizeRun(
   };
 
   if (survived || !state.currentAgent || !state.market) {
-    return baseResult as GameStoreState;
+    return baseResult;
   }
 
   const rng = createRng(`${state.market.seed}:${state.currentAgent.id}:epitaph`);
@@ -513,8 +663,141 @@ function finalizeRun(
   };
 
   return {
-    ...(baseResult as GameStoreState),
+    ...baseResult,
     museumRecords: [museumRecord, ...state.museumRecords].slice(0, 24),
+  };
+}
+
+function applyResolvedDecision(
+  state: GameStoreData,
+  decision: Decision,
+  source: DecisionSource,
+  decisionEnginePatch: Partial<DecisionEngineState>,
+): GameStoreData {
+  if (state.phase !== "running" || !state.market || !state.currentAgent) {
+    return state;
+  }
+
+  const beforeSnapshot = getPortfolioSnapshot(
+    state.market,
+    state.positions,
+    state.currentTick,
+    state.cash,
+    state.borrowed,
+  );
+  const tradeState = applyDecision(
+    state.market,
+    state.currentTick,
+    state.positions,
+    state.cash,
+    state.borrowed,
+    decision,
+  );
+  const afterSnapshot = getPortfolioSnapshot(
+    state.market,
+    tradeState.positions,
+    state.currentTick,
+    tradeState.cash,
+    tradeState.borrowed,
+  );
+  const latestNews = state.newsQueue.at(-1) ?? state.currentAgent.lastNews;
+  const currentAgent = {
+    ...evolveAgentEmotion(
+      {
+        ...state.currentAgent,
+        lastThought: decision.reason,
+        lastDecision: decision,
+        lastNews: latestNews,
+      },
+      afterSnapshot.equity - beforeSnapshot.equity,
+      afterSnapshot.unrealizedPnl,
+    ),
+    lastThought: decision.reason,
+    lastDecision: decision,
+    lastNews: latestNews,
+  };
+
+  const baseState: GameStoreData = {
+    ...state,
+    positions: tradeState.positions,
+    cash: tradeState.cash,
+    borrowed: tradeState.borrowed,
+    currentAgent,
+    selectedTicker: decision.ticker || state.selectedTicker,
+    marginCall: null,
+    decisionEngine: {
+      ...state.decisionEngine,
+      ...decisionEnginePatch,
+      lastSource: source,
+      lastError: decisionEnginePatch.lastError ?? null,
+      lastAppliedTick: state.currentTick,
+    },
+  };
+
+  if (afterSnapshot.equity <= 0) {
+    return finalizeRun(
+      baseState,
+      false,
+      pickText(
+        state.settings.locale,
+        "Account equity hit zero. The broker carried you out of the hall.",
+        "账户净值归零，券商把你抬出了大厅。",
+      ),
+    );
+  }
+
+  const marginCall = getMarginCall(
+    afterSnapshot.equity,
+    afterSnapshot.exposure,
+    tradeState.borrowed,
+    state.settings.locale,
+  );
+
+  if (marginCall) {
+    return {
+      ...baseState,
+      marginCall,
+    };
+  }
+
+  return baseState;
+}
+
+function canApplyAsyncDecision(state: GameStoreState, requestTick: number): boolean {
+  if (
+    state.phase !== "running" ||
+    !state.market ||
+    !state.currentAgent ||
+    state.marginCall ||
+    state.currentTick - requestTick > AI_DECISION_STALE_TICKS
+  ) {
+    return false;
+  }
+
+  return !(
+    state.decisionEngine.lastSource === "player" &&
+    (state.decisionEngine.lastAppliedTick ?? -1) >= requestTick
+  );
+}
+
+function getRestingDecisionStatus(
+  engine: DecisionEngineState,
+): DecisionEngineState["status"] {
+  if (engine.lastSource === "fallback") {
+    return "fallback";
+  }
+
+  if (engine.lastAppliedTick === null) {
+    return "idle";
+  }
+
+  return "ready";
+}
+
+function settleDecisionEngine(engine: DecisionEngineState): DecisionEngineState {
+  return {
+    ...engine,
+    status: getRestingDecisionStatus(engine),
   };
 }
 
@@ -701,10 +984,14 @@ function getPortfolioSnapshot(
   equity: number;
 } {
   const exposure = positions.reduce(
-    (sum, position) => sum + position.quantity * getTickerPrice(market, position.ticker, currentTick),
+    (sum, position) =>
+      sum + position.quantity * getTickerPrice(market, position.ticker, currentTick),
     0,
   );
-  const costBasis = positions.reduce((sum, position) => sum + position.quantity * position.avgPrice, 0);
+  const costBasis = positions.reduce(
+    (sum, position) => sum + position.quantity * position.avgPrice,
+    0,
+  );
   const unrealizedPnl = exposure - costBasis;
   const equity = cash + exposure - borrowed;
 

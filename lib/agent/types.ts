@@ -3,6 +3,7 @@ import type { LocalizedText } from "@/lib/i18n";
 
 export type AgentPersonality = "martingale" | "technician" | "insider" | "deadhand";
 export type DecisionAction = "BUY" | "SELL" | "HOLD" | "LEVERAGE" | "PANIC_SELL";
+export type DecisionSource = "ai" | "fallback" | "player";
 
 export interface AgentTemplate {
   id: string;

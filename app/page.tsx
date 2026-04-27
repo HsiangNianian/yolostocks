@@ -13,7 +13,14 @@ import { PositionCard } from "@/components/PositionCard";
 import { Terminal } from "@/components/Terminal";
 import { useGameLoop } from "@/hooks/useGameLoop";
 import { getTickerPrice } from "@/lib/agent/decision";
-import { getMarketStyleLabel, getPersonalityLabel, resolveText, t } from "@/lib/i18n";
+import {
+  getDecisionEngineStatusLabel,
+  getDecisionSourceLabel,
+  getMarketStyleLabel,
+  getPersonalityLabel,
+  resolveText,
+  t,
+} from "@/lib/i18n";
 import { formatCurrency, formatTickTime } from "@/lib/utils/formatters";
 import { useGameStore } from "@/store/gameStore";
 
@@ -35,6 +42,7 @@ export default function HomePage() {
     selectedTicker,
     currentTick,
     marginCall,
+    decisionEngine,
     settings,
     gameResult,
     startGame,
@@ -160,6 +168,17 @@ export default function HomePage() {
                     />
                     <Metric label={t(locale, "metric.equity")} value={formatCurrency(equity, locale)} emphasis />
                     <Metric label={t(locale, "metric.reserve")} value={formatCurrency(reserveCash, locale)} />
+                    <Metric
+                      label={t(locale, "metric.engine")}
+                      value={getDecisionEngineStatusLabel(locale, decisionEngine.status)}
+                    />
+                    <Metric
+                      label={t(locale, "metric.source")}
+                      value={getDecisionSourceLabel(locale, decisionEngine.lastSource)}
+                    />
+                  </div>
+                  <div className="mt-3 rounded-2xl border border-white/10 bg-black/30 p-3 text-xs text-white/60">
+                    {decisionEngine.lastError ? decisionEngine.lastError : t(locale, "engine.hint")}
                   </div>
                 </div>
                 <AgentPanel agent={currentAgent} locale={locale} />

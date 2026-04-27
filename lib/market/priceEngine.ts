@@ -34,6 +34,7 @@ export interface BuildTickerSeriesInput {
   basePrice: number;
   style: MarketStyle;
   totalTicks: number;
+  startTimestampSec: number;
   events: NewsEvent[];
   rng: Rng;
 }
@@ -42,6 +43,7 @@ export function buildTickerSeries({
   basePrice,
   style,
   totalTicks,
+  startTimestampSec,
   events,
   rng,
 }: BuildTickerSeriesInput): Candle[] {
@@ -83,7 +85,7 @@ export function buildTickerSeries({
     const volume = Math.floor(1_200 + Math.abs(delta) * 140_000 + rng() * 6_000);
 
     candles.push({
-      time: 1_700_000_000 + tick * 60,
+      time: startTimestampSec + tick,
       open: roundPrice(open),
       high: roundPrice(high),
       low: roundPrice(low),

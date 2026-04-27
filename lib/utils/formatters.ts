@@ -1,4 +1,5 @@
 import type { Locale } from "@/lib/i18n";
+import { getSessionTimestampMs } from "@/lib/game/loop";
 
 function getIntlLocale(locale: Locale): string {
   return locale === "zh" ? "zh-CN" : "en-US";
@@ -30,14 +31,21 @@ export function formatMultiplier(value: number, locale: Locale): string {
   return `${formatter.format(value)}x`;
 }
 
-export function formatTickTime(currentTick: number, ticksPerDay: number, locale: Locale): string {
-  const day = Math.floor(currentTick / ticksPerDay) + 1;
-  const minute = currentTick % ticksPerDay;
-  if (locale === "zh") {
-    return `第${day.toString().padStart(2, "0")}天 · 第${minute
-      .toString()
-      .padStart(2, "0")}分`;
+export function formatSessionTime(
+  sessionStartedAt: number | null,
+  currentTick: number,
+  locale: Locale,
+): string {
+  const timestamp = getSessionTimestampMs(sessionStartedAt, currentTick);
+  if (timestamp === null) {
+    return "--";
   }
 
-  return `DAY ${day.toString().padStart(2, "0")} · M${minute.toString().padStart(2, "0")}`;
+  return new Intl.DateTimeFormat(getIntlLocale(locale), {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).format(timestamp);
 }
