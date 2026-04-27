@@ -252,7 +252,7 @@ export const useGameStore = create<GameStoreState>()(
               true,
               pickText(
                 state.settings.locale,
-                `${state.currentAgent.name.en} walked out of 30 days of tape alive, but the eyes are wrong now.`,
+                `${state.currentAgent.name.en} walked out of the live tape alive, but the eyes are wrong now.`,
                 `${state.currentAgent.name.zh} 活着走完了这一段实时行情，但眼神已经不对了。`,
               ),
             );
