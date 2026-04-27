@@ -1,0 +1,73 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  background:
+    radial-gradient(circle at top, rgba(125, 255, 155, 0.1), transparent 32%),
+    linear-gradient(180deg, #040a06 0%, #020604 100%);
+  color: #d8ffe2;
+  font-family: "Fira Code", "JetBrains Mono", monospace;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+.scanlines::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(
+      to bottom,
+      rgba(255, 255, 255, 0.02) 0%,
+      rgba(255, 255, 255, 0.02) 50%,
+      rgba(0, 0, 0, 0.03) 50%,
+      rgba(0, 0, 0, 0.03) 100%
+    );
+  background-size: 100% 4px;
+  opacity: 0.18;
+}
+
+.terminal-grid {
+  background-image:
+    linear-gradient(rgba(125, 255, 155, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(125, 255, 155, 0.04) 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+
+.scrollbar-thin {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(125, 255, 155, 0.28) transparent;
+}
+
+.scrollbar-thin::-webkit-scrollbar {
+  width: 8px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background: rgba(125, 255, 155, 0.22);
+  border-radius: 999px;
+}
