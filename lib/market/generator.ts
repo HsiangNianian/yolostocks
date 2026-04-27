@@ -57,7 +57,17 @@ const STYLE_WEIGHTS: { value: MarketStyle; weight: number }[] = [
   { value: "black_swan", weight: 0.22 },
 ];
 
-export function generateMarket(seed?: string): Market {
+export function generateMarket(
+  seed?: string,
+  startTimestampSec = 1_700_000_000,
+): Market {
+  return generateMarketWithStart(seed, startTimestampSec);
+}
+
+export function generateMarketWithStart(
+  seed?: string,
+  startTimestampSec = 1_700_000_000,
+): Market {
   const resolvedSeed = seed?.trim() || `seed-${Date.now()}`;
   const rng = createRng(resolvedSeed);
   const style = weightedPick(rng, STYLE_WEIGHTS);
@@ -65,7 +75,7 @@ export function generateMarket(seed?: string): Market {
   const ticksPerDay = 30;
   const totalTicks = totalDays * ticksPerDay;
 
-  const tickers = buildTickers(rng, totalTicks, style);
+  const tickers = buildTickers(rng, totalTicks, style, startTimestampSec);
   const featuredTicker = pickOne(rng, tickers).symbol;
   const scheduledEvents = buildEvents(rng, tickers, totalTicks, style, featuredTicker);
   const enrichedTickers = tickers.map((ticker) => ({
@@ -74,6 +84,7 @@ export function generateMarket(seed?: string): Market {
       basePrice: ticker.candles[0]!.close,
       style,
       totalTicks,
+      startTimestampSec,
       events: scheduledEvents.filter((event) => event.ticker === ticker.symbol),
       rng: createRng(`${resolvedSeed}:${ticker.symbol}:series`),
     }),
@@ -95,6 +106,7 @@ function buildTickers(
   rng: ReturnType<typeof createRng>,
   totalTicks: number,
   style: MarketStyle,
+  startTimestampSec: number,
 ): MarketTicker[] {
   const combinations = shuffle(
     rng,
@@ -123,7 +135,7 @@ function buildTickers(
       name,
       candles: [
         {
-          time: 1_700_000_000,
+          time: startTimestampSec,
           open: basePrice,
           high: basePrice,
           low: basePrice,

@@ -54,6 +54,7 @@ export interface GameStoreState {
   speed: 1 | 2 | 5;
   selectedTicker: string | null;
   currentTick: number;
+  sessionStartedAt: number | null;
   marginCall: MarginCall | null;
   decisionEngine: DecisionEngineState;
   museumRecords: MuseumRecord[];
@@ -119,6 +120,7 @@ const initialState: GameStoreData = {
   speed: 1,
   selectedTicker: null,
   currentTick: 0,
+  sessionStartedAt: null,
   marginCall: null,
   decisionEngine: createInitialDecisionEngine(),
   museumRecords: [],
@@ -137,7 +139,11 @@ export const useGameStore = create<GameStoreState>()(
       startGame: (agentId, seed) => {
         const agentTemplate =
           get().agents.find((agent) => agent.id === agentId) ?? AGENT_TEMPLATES[0];
-        const market = generateMarket(seed);
+        const sessionStartedAt = Date.now();
+        const market = generateMarket(
+          seed,
+          Math.floor(sessionStartedAt / 1_000),
+        );
         const locale = get().settings.locale;
 
         set({
@@ -153,6 +159,7 @@ export const useGameStore = create<GameStoreState>()(
           speed: 1,
           selectedTicker: market.tickers[0]?.symbol ?? null,
           currentTick: 0,
+          sessionStartedAt,
           marginCall: null,
           decisionEngine: createInitialDecisionEngine(),
           gameResult: null,
@@ -246,7 +253,7 @@ export const useGameStore = create<GameStoreState>()(
               pickText(
                 state.settings.locale,
                 `${state.currentAgent.name.en} walked out of 30 days of tape alive, but the eyes are wrong now.`,
-                `${state.currentAgent.name.zh} 活着走出了 30 天行情，但眼神已经不对了。`,
+                `${state.currentAgent.name.zh} 活着走完了这一段实时行情，但眼神已经不对了。`,
               ),
             );
           }
