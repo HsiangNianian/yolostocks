@@ -21,7 +21,7 @@ import {
   resolveText,
   t,
 } from "@/lib/i18n";
-import { formatCurrency, formatTickTime } from "@/lib/utils/formatters";
+import { formatCurrency, formatSessionTime } from "@/lib/utils/formatters";
 import { useGameStore } from "@/store/gameStore";
 
 export default function HomePage() {
@@ -41,6 +41,7 @@ export default function HomePage() {
     speed,
     selectedTicker,
     currentTick,
+    sessionStartedAt,
     marginCall,
     decisionEngine,
     settings,
@@ -164,7 +165,7 @@ export default function HomePage() {
                     />
                     <Metric
                       label={t(locale, "metric.time")}
-                      value={formatTickTime(currentTick, market.ticksPerDay, locale)}
+                      value={formatSessionTime(sessionStartedAt, currentTick, locale)}
                     />
                     <Metric label={t(locale, "metric.equity")} value={formatCurrency(equity, locale)} emphasis />
                     <Metric label={t(locale, "metric.reserve")} value={formatCurrency(reserveCash, locale)} />
