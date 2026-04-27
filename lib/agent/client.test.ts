@@ -5,6 +5,7 @@ import type { Market } from "@/lib/market/types";
 
 const market: Market = {
   seed: "request-seed",
+  worldClockKey: "28333333",
   style: "slow_bull",
   totalDays: 1,
   ticksPerDay: 24,
@@ -63,10 +64,15 @@ describe("buildAgentDecisionRequest", () => {
           tick: 3,
           ticker: "AAA1",
           headline: "AAA1 secures mystery funding",
+          headlineZh: "AAA1获得神秘融资",
           headlineVariant: 0,
           tone: "bullish",
           accuracy: "real",
           impact: 0.04,
+          kind: "news",
+          scope: "ticker",
+          affectedTickers: ["AAA1"],
+          sourceAgent: "House Dealer",
         },
       ],
       currentTick: 4,
@@ -91,6 +97,9 @@ describe("buildAgentDecisionRequest", () => {
     expect(request.market.board[0]!.moveShort).toBeCloseTo(0.08, 5);
     expect(request.news[0]).toMatchObject({
       ticker: "AAA1",
+      kind: "news",
+      scope: "ticker",
+      sourceAgent: "House Dealer",
       tone: "bullish",
       accuracy: "real",
       ageTicks: 1,

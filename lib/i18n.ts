@@ -4,7 +4,14 @@ import type {
   DecisionSource,
 } from "@/lib/agent/types";
 import type { DecisionEngineStatus } from "@/lib/game/types";
-import type { MarketStyle, NewsAccuracy, NewsEvent, NewsTone } from "@/lib/market/types";
+import type {
+  MarketStyle,
+  NewsAccuracy,
+  NewsEvent,
+  NewsTone,
+  WorldEventKind,
+  WorldEventScope,
+} from "@/lib/market/types";
 
 export type Locale = "en" | "zh";
 export type LocaleMode = "auto" | "manual";
@@ -257,6 +264,36 @@ const toneLabels: Record<NewsTone, LocalizedText> = {
   },
 };
 
+const worldEventKindLabels: Record<WorldEventKind, LocalizedText> = {
+  news: {
+    en: "News",
+    zh: "新闻",
+  },
+  policy: {
+    en: "Policy",
+    zh: "政策",
+  },
+  liquidity: {
+    en: "Liquidity",
+    zh: "流动性",
+  },
+  meme: {
+    en: "Meme",
+    zh: "情绪",
+  },
+};
+
+const worldEventScopeLabels: Record<WorldEventScope, LocalizedText> = {
+  ticker: {
+    en: "single name",
+    zh: "单票",
+  },
+  market: {
+    en: "market-wide",
+    zh: "全场",
+  },
+};
+
 const newsVerbs: Record<NewsTone, string[]> = {
   bullish: [
     "secures mystery funding",
@@ -351,15 +388,36 @@ export function getNewsToneLabel(locale: Locale, tone: NewsTone): string {
   return resolveText(locale, toneLabels[tone]);
 }
 
+export function getWorldEventKindLabel(
+  locale: Locale,
+  kind: WorldEventKind,
+): string {
+  return resolveText(locale, worldEventKindLabels[kind]);
+}
+
+export function getWorldEventScopeLabel(
+  locale: Locale,
+  scope: WorldEventScope,
+): string {
+  return resolveText(locale, worldEventScopeLabels[scope]);
+}
+
+export function getNewsSubjectLabel(locale: Locale, event: NewsEvent): string {
+  if (event.scope === "market") {
+    return locale === "zh" ? "全场" : "MARKET";
+  }
+
+  return event.ticker;
+}
+
 export function getNewsAccuracyLabel(locale: Locale, accuracy: NewsAccuracy): string {
   return t(locale, accuracy === "real" ? "news.accuracy.real" : "news.accuracy.fake");
 }
 
 export function formatNewsHeadline(locale: Locale, event: NewsEvent): string {
-  const verbIndex = event.headlineVariant % newsVerbs[event.tone].length;
   if (locale === "zh") {
-    return `${event.ticker}${newsVerbsZh[event.tone][verbIndex]!}`;
+    return event.headlineZh || `${event.ticker}${newsVerbsZh[event.tone][event.headlineVariant % newsVerbsZh[event.tone].length]!}`;
   }
 
-  return `${event.ticker} ${newsVerbs[event.tone][verbIndex]!}`;
+  return event.headline || `${event.ticker} ${newsVerbs[event.tone][event.headlineVariant % newsVerbs[event.tone].length]!}`;
 }

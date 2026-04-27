@@ -12,10 +12,15 @@ describe("i18n helpers", () => {
       tick: 10,
       ticker: "AAA1",
       headline: "AAA1 secures mystery funding",
+      headlineZh: "AAA1获得神秘融资",
       headlineVariant: 0,
       tone: "bullish" as const,
       accuracy: "real" as const,
       impact: 0.03,
+      kind: "news" as const,
+      scope: "ticker" as const,
+      affectedTickers: ["AAA1"],
+      sourceAgent: "House Dealer",
     };
 
     expect(formatNewsHeadline("en", event)).toBe("AAA1 secures mystery funding");

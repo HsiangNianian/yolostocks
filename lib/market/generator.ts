@@ -1,11 +1,10 @@
 import type { Market, MarketStyle, MarketTicker, NewsAccuracy, NewsEvent, NewsTone } from "@/lib/market/types";
 import { buildTickerSeries } from "@/lib/market/priceEngine";
+import { buildWorldEvents, type WorldAgentConfig } from "@/lib/world/agent";
 import {
-  chance,
   createRng,
   pickOne,
   randomBetween,
-  randomInt,
   shuffle,
   weightedPick,
 } from "@/lib/utils/random";
@@ -36,21 +35,6 @@ const COMPANY_SUFFIXES = [
   "MATRIX",
 ];
 
-const HEADLINE_VERBS = {
-  bullish: [
-    "secures mystery funding",
-    "teases a strategic partnership",
-    "leaks a surprise product demo",
-    "announces a tokenized buyback",
-  ],
-  bearish: [
-    "faces a sudden regulatory review",
-    "misses a guidance whisper number",
-    "freezes withdrawals for maintenance",
-    "gets hit by a supplier panic",
-  ],
-};
-
 const STYLE_WEIGHTS: { value: MarketStyle; weight: number }[] = [
   { value: "slow_bull", weight: 0.36 },
   { value: "chop", weight: 0.42 },
@@ -60,16 +44,22 @@ const STYLE_WEIGHTS: { value: MarketStyle; weight: number }[] = [
 export function generateMarket(
   seed?: string,
   startTimestampSec = 1_700_000_000,
+  worldAgent?: WorldAgentConfig,
+  sourceAgentName = "House Dealer",
 ): Market {
-  return generateMarketWithStart(seed, startTimestampSec);
+  return generateMarketWithStart(seed, startTimestampSec, worldAgent, sourceAgentName);
 }
 
 export function generateMarketWithStart(
   seed?: string,
   startTimestampSec = 1_700_000_000,
+  worldAgent?: WorldAgentConfig,
+  sourceAgentName = "House Dealer",
 ): Market {
   const resolvedSeed = seed?.trim() || `seed-${Date.now()}`;
-  const rng = createRng(resolvedSeed);
+  const worldClockKey = Math.floor(startTimestampSec / 60).toString();
+  const worldSeed = `${resolvedSeed}:${worldClockKey}`;
+  const rng = createRng(worldSeed);
   const style = weightedPick(rng, STYLE_WEIGHTS);
   const totalDays = 30;
   const ticksPerDay = 30;
@@ -77,7 +67,17 @@ export function generateMarketWithStart(
 
   const tickers = buildTickers(rng, totalTicks, style, startTimestampSec);
   const featuredTicker = pickOne(rng, tickers).symbol;
-  const scheduledEvents = buildEvents(rng, tickers, totalTicks, style, featuredTicker);
+  const scheduledEvents = worldAgent
+    ? buildWorldEvents({
+        tickers,
+        totalTicks,
+        style,
+        featuredTicker,
+        worldSeed,
+        worldAgent,
+        sourceAgentName,
+      })
+    : [];
   const enrichedTickers = tickers.map((ticker) => ({
     ...ticker,
     candles: buildTickerSeries({
@@ -85,13 +85,14 @@ export function generateMarketWithStart(
       style,
       totalTicks,
       startTimestampSec,
-      events: scheduledEvents.filter((event) => event.ticker === ticker.symbol),
-      rng: createRng(`${resolvedSeed}:${ticker.symbol}:series`),
+      events: scheduledEvents.filter((event) => event.affectedTickers.includes(ticker.symbol)),
+      rng: createRng(`${worldSeed}:${ticker.symbol}:series`),
     }),
   }));
 
   return {
     seed: resolvedSeed,
+    worldClockKey,
     style,
     totalDays,
     ticksPerDay,
@@ -145,101 +146,4 @@ function buildTickers(
       ],
     };
   });
-}
-
-function buildEvents(
-  rng: ReturnType<typeof createRng>,
-  tickers: MarketTicker[],
-  totalTicks: number,
-  style: MarketStyle,
-  featuredTicker: string,
-): NewsEvent[] {
-  const events: NewsEvent[] = [];
-  const baselineCount = style === "chop" ? 6 : 5;
-
-  for (let index = 0; index < baselineCount; index += 1) {
-    const ticker = pickOne(rng, tickers);
-    const tone = chance(rng, 0.5) ? "bullish" : "bearish";
-    const accuracy = chance(rng, 0.63) ? "real" : "fake";
-    const tick = randomInt(rng, 30, totalTicks - 40);
-
-    events.push(
-      createEvent({
-        tick,
-        ticker: ticker.symbol,
-        tone,
-        accuracy,
-        impact: randomBetween(rng, 0.018, 0.06),
-      }),
-    );
-  }
-
-  if (style === "slow_bull") {
-    events.push(
-      createEvent({
-        tick: Math.floor(totalTicks * 0.58),
-        ticker: featuredTicker,
-        tone: "bullish",
-        accuracy: "real",
-        impact: 0.09,
-      }),
-    );
-  }
-
-  if (style === "black_swan") {
-    const swanTick = Math.floor(totalTicks * 0.63);
-    for (const ticker of tickers) {
-      events.push(
-        createEvent({
-          tick: swanTick + randomInt(rng, -4, 4),
-          ticker: ticker.symbol,
-          tone: "bearish",
-          accuracy: "real",
-          impact: ticker.symbol === featuredTicker ? 0.11 : 0.16,
-        }),
-      );
-    }
-
-    events.push(
-      createEvent({
-        tick: Math.floor(totalTicks * 0.76),
-        ticker: featuredTicker,
-        tone: "bullish",
-        accuracy: "real",
-        impact: 0.13,
-      }),
-    );
-  }
-
-  return dedupeEvents(events);
-}
-
-function createEvent(input: {
-  tick: number;
-  ticker: string;
-  tone: NewsTone;
-  accuracy: NewsAccuracy;
-  impact: number;
-}): NewsEvent {
-  const verbPool = HEADLINE_VERBS[input.tone];
-  const headlineVariant = input.tick % verbPool.length;
-  const verb = verbPool[headlineVariant]!;
-  return {
-    id: `${input.ticker}-${input.tick}-${input.tone}`,
-    tick: input.tick,
-    ticker: input.ticker,
-    tone: input.tone,
-    accuracy: input.accuracy,
-    impact: input.impact,
-    headline: `${input.ticker} ${verb}`,
-    headlineVariant,
-  };
-}
-
-function dedupeEvents(events: NewsEvent[]): NewsEvent[] {
-  const eventMap = new Map<string, NewsEvent>();
-  for (const event of events) {
-    eventMap.set(`${event.ticker}-${event.tick}`, event);
-  }
-  return [...eventMap.values()];
 }

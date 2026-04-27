@@ -30,10 +30,18 @@ import type {
   MarginCall,
   MuseumRecord,
   Position,
+  TradeAnnotation,
 } from "@/lib/game/types";
 import { detectLocale, type Locale, type LocaleMode, pickText } from "@/lib/i18n";
 import { generateMarket } from "@/lib/market/generator";
 import type { Market, NewsEvent } from "@/lib/market/types";
+import {
+  applyWorldAgentPreset,
+  createDefaultWorldAgentConfig,
+  getWorldAgentDisplayName,
+  type WorldAgentConfig,
+  type WorldAgentPresetId,
+} from "@/lib/world/agent";
 import { createRng } from "@/lib/utils/random";
 
 const STARTING_CASH = 10_000;
@@ -57,6 +65,9 @@ export interface GameStoreState {
   sessionStartedAt: number | null;
   marginCall: MarginCall | null;
   decisionEngine: DecisionEngineState;
+  tradeTimeline: TradeAnnotation[];
+  worldAgentDraft: WorldAgentConfig;
+  activeWorldAgent: WorldAgentConfig | null;
   museumRecords: MuseumRecord[];
   settings: {
     muted: boolean;
@@ -71,6 +82,12 @@ export interface GameStoreState {
   forceSell: () => void;
   selectTicker: (ticker: string) => void;
   cycleSpeed: () => void;
+  applyWorldAgentPreset: (presetId: WorldAgentPresetId) => void;
+  setWorldAgentAlias: (alias: string) => void;
+  setWorldAgentTrait: (
+    trait: "drama" | "tempo" | "bias" | "coordination" | "deception",
+    value: number,
+  ) => void;
   setMuted: (muted: boolean) => void;
   setLocale: (locale: Locale) => void;
   useAutoLocale: () => void;
@@ -87,6 +104,9 @@ type GameStoreActionKeys =
   | "forceSell"
   | "selectTicker"
   | "cycleSpeed"
+  | "applyWorldAgentPreset"
+  | "setWorldAgentAlias"
+  | "setWorldAgentTrait"
   | "setMuted"
   | "setLocale"
   | "useAutoLocale"
@@ -123,6 +143,9 @@ const initialState: GameStoreData = {
   sessionStartedAt: null,
   marginCall: null,
   decisionEngine: createInitialDecisionEngine(),
+  tradeTimeline: [],
+  worldAgentDraft: createDefaultWorldAgentConfig(),
+  activeWorldAgent: null,
   museumRecords: [],
   settings: {
     muted: false,
@@ -137,14 +160,18 @@ export const useGameStore = create<GameStoreState>()(
     (set, get) => ({
       ...initialState,
       startGame: (agentId, seed) => {
+        const worldAgentDraft = get().worldAgentDraft;
         const agentTemplate =
           get().agents.find((agent) => agent.id === agentId) ?? AGENT_TEMPLATES[0];
         const sessionStartedAt = Date.now();
+        const locale = get().settings.locale;
+        const sourceAgentName = getWorldAgentDisplayName(locale, worldAgentDraft);
         const market = generateMarket(
           seed,
           Math.floor(sessionStartedAt / 1_000),
+          worldAgentDraft,
+          sourceAgentName,
         );
-        const locale = get().settings.locale;
 
         set({
           phase: "running",
@@ -162,6 +189,10 @@ export const useGameStore = create<GameStoreState>()(
           sessionStartedAt,
           marginCall: null,
           decisionEngine: createInitialDecisionEngine(),
+          tradeTimeline: [],
+          activeWorldAgent: {
+            ...worldAgentDraft,
+          },
           gameResult: null,
         });
       },
@@ -472,6 +503,30 @@ export const useGameStore = create<GameStoreState>()(
           speed: current === 1 ? 2 : current === 2 ? 5 : 1,
         });
       },
+      applyWorldAgentPreset: (presetId) => {
+        set((state) => ({
+          worldAgentDraft: applyWorldAgentPreset(presetId, state.worldAgentDraft),
+        }));
+      },
+      setWorldAgentAlias: (alias) => {
+        set((state) => ({
+          worldAgentDraft: {
+            ...state.worldAgentDraft,
+            alias,
+          },
+        }));
+      },
+      setWorldAgentTrait: (trait, value) => {
+        set((state) => ({
+          worldAgentDraft: {
+            ...state.worldAgentDraft,
+            [trait]:
+              trait === "bias"
+                ? Math.max(-1, Math.min(1, value))
+                : Math.max(0, Math.min(1, value)),
+          },
+        }));
+      },
       setMuted: (muted) => {
         set((state) => ({
           settings: {
@@ -594,6 +649,7 @@ export const useGameStore = create<GameStoreState>()(
           ...initialState,
           museumRecords: state.museumRecords,
           settings: state.settings,
+          worldAgentDraft: state.worldAgentDraft,
         }));
       },
     }),
@@ -609,11 +665,16 @@ export const useGameStore = create<GameStoreState>()(
             ...currentState.settings,
             ...persisted.settings,
           },
+          worldAgentDraft: {
+            ...currentState.worldAgentDraft,
+            ...persisted.worldAgentDraft,
+          },
         };
       },
       partialize: (state) => ({
         museumRecords: state.museumRecords,
         settings: state.settings,
+        worldAgentDraft: state.worldAgentDraft,
       }),
     },
   ),
@@ -732,6 +793,12 @@ function applyResolvedDecision(
     currentAgent,
     selectedTicker: decision.ticker || state.selectedTicker,
     marginCall: null,
+    tradeTimeline: shouldCreateTradeAnnotation(decision.action)
+      ? [
+          ...state.tradeTimeline,
+          createTradeAnnotation(state, decision, source),
+        ].slice(-240)
+      : state.tradeTimeline,
     decisionEngine: {
       ...state.decisionEngine,
       ...decisionEnginePatch,
@@ -785,6 +852,29 @@ function canApplyAsyncDecision(state: GameStoreState, requestTick: number): bool
     state.decisionEngine.lastSource === "player" &&
     (state.decisionEngine.lastAppliedTick ?? -1) >= requestTick
   );
+}
+
+function shouldCreateTradeAnnotation(action: Decision["action"]): boolean {
+  return action !== "HOLD";
+}
+
+function createTradeAnnotation(
+  state: GameStoreData,
+  decision: Decision,
+  source: DecisionSource,
+): TradeAnnotation {
+  return {
+    id: `${source}:${decision.action}:${decision.ticker}:${state.currentTick}:${state.tradeTimeline.length}`,
+    tick: state.currentTick,
+    ticker: decision.ticker,
+    action: decision.action,
+    source,
+    reason: decision.reason,
+    confidence: decision.confidence,
+    executedPrice: state.market
+      ? getTickerPrice(state.market, decision.ticker, state.currentTick)
+      : 0,
+  };
 }
 
 function getRestingDecisionStatus(

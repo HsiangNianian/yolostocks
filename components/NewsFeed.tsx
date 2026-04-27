@@ -1,6 +1,15 @@
 import type { NewsEvent } from "@/lib/market/types";
 import type { Locale } from "@/lib/i18n";
-import { formatNewsHeadline, getNewsAccuracyLabel, getNewsToneLabel, t } from "@/lib/i18n";
+import {
+  formatNewsHeadline,
+  getNewsAccuracyLabel,
+  getNewsSubjectLabel,
+  getNewsToneLabel,
+  getWorldEventKindLabel,
+  getWorldEventScopeLabel,
+  pickText,
+  t,
+} from "@/lib/i18n";
 
 export function NewsFeed({
   news,
@@ -30,7 +39,7 @@ export function NewsFeed({
               className="rounded-2xl border border-white/10 bg-black/30 p-3 text-sm"
             >
               <div className="mb-1 flex items-center justify-between text-xs">
-                <span className="font-semibold text-phosphor">{item.ticker}</span>
+                <span className="font-semibold text-phosphor">{getNewsSubjectLabel(locale, item)}</span>
                 <span
                   className={item.tone === "bullish" ? "text-phosphor/70" : "text-danger/70"}
                 >
@@ -38,8 +47,14 @@ export function NewsFeed({
                 </span>
               </div>
               <div className="text-white/80">{formatNewsHeadline(locale, item)}</div>
-              <div className="mt-2 text-[11px] uppercase tracking-[0.2em] text-white/35">
-                {getNewsAccuracyLabel(locale, item.accuracy)}
+              <div className="mt-2 flex flex-wrap gap-2 text-[11px] uppercase tracking-[0.2em] text-white/35">
+                <span>{getWorldEventKindLabel(locale, item.kind)}</span>
+                <span>{getWorldEventScopeLabel(locale, item.scope)}</span>
+                <span>{getNewsAccuracyLabel(locale, item.accuracy)}</span>
+              </div>
+              <div className="mt-2 text-xs text-white/40">
+                {pickText(locale, "Issued by ", "出题人：")}
+                {item.sourceAgent}
               </div>
             </div>
           ))}

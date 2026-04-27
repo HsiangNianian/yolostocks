@@ -88,6 +88,9 @@ export function buildAgentDecisionRequest(input: {
       .map((item) => ({
         ticker: item.ticker,
         headline: formatNewsHeadline(input.locale, item),
+        kind: item.kind,
+        scope: item.scope,
+        sourceAgent: item.sourceAgent,
         tone: item.tone,
         accuracy: item.accuracy,
         ageTicks: Math.max(0, input.currentTick - item.tick),

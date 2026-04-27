@@ -11,6 +11,8 @@ import { LocaleToggle } from "@/components/LocaleToggle";
 import { NewsFeed } from "@/components/NewsFeed";
 import { PositionCard } from "@/components/PositionCard";
 import { Terminal } from "@/components/Terminal";
+import { WorldAgentConfigurator } from "@/components/WorldAgentConfigurator";
+import { WorldAgentPanel } from "@/components/WorldAgentPanel";
 import { useGameLoop } from "@/hooks/useGameLoop";
 import { getTickerPrice } from "@/lib/agent/decision";
 import {
@@ -44,6 +46,9 @@ export default function HomePage() {
     sessionStartedAt,
     marginCall,
     decisionEngine,
+    tradeTimeline,
+    worldAgentDraft,
+    activeWorldAgent,
     settings,
     gameResult,
     startGame,
@@ -51,6 +56,9 @@ export default function HomePage() {
     forceSell,
     selectTicker,
     cycleSpeed,
+    applyWorldAgentPreset,
+    setWorldAgentAlias,
+    setWorldAgentTrait,
     setMuted,
     resolveMarginCall,
     returnToLobby,
@@ -59,6 +67,17 @@ export default function HomePage() {
 
   const selectedSeries = market?.tickers.find((ticker) => ticker.symbol === selectedTicker) ?? market?.tickers[0];
   const visibleCandles = selectedSeries?.candles.slice(0, currentTick + 1) ?? [];
+  const selectedEvents =
+    market?.scheduledEvents.filter(
+      (event) =>
+        event.tick <= currentTick &&
+        selectedSeries &&
+        event.affectedTickers.includes(selectedSeries.symbol),
+    ) ?? [];
+  const selectedTrades =
+    tradeTimeline.filter(
+      (trade) => trade.tick <= currentTick && trade.ticker === selectedSeries?.symbol,
+    ) ?? [];
   const exposure = useMemo(
     () =>
       positions.reduce((sum, position) => {
@@ -119,6 +138,13 @@ export default function HomePage() {
                       className="mt-3 w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white outline-none transition focus:border-phosphor/40"
                     />
                   </div>
+                  <WorldAgentConfigurator
+                    locale={locale}
+                    worldAgent={worldAgentDraft}
+                    onApplyPreset={applyWorldAgentPreset}
+                    onAliasChange={setWorldAgentAlias}
+                    onTraitChange={setWorldAgentTrait}
+                  />
                 </div>
               </section>
 
@@ -206,6 +232,9 @@ export default function HomePage() {
                   <KLineChart
                     symbol={selectedSeries?.symbol ?? "----"}
                     candles={visibleCandles}
+                    events={selectedEvents}
+                    trades={selectedTrades}
+                    currentTick={currentTick}
                     locale={locale}
                   />
                 </div>
@@ -253,6 +282,7 @@ export default function HomePage() {
                     <Metric label={t(locale, "metric.seed")} value={market.seed} mono />
                   </div>
                 </div>
+                <WorldAgentPanel locale={locale} worldAgent={activeWorldAgent} />
                 <NewsFeed news={newsQueue} locale={locale} />
               </aside>
             </div>

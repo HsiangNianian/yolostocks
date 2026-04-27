@@ -9,6 +9,7 @@ import type { Market } from "@/lib/market/types";
 
 const market: Market = {
   seed: "test-seed",
+  worldClockKey: "28333333",
   style: "chop",
   totalDays: 1,
   ticksPerDay: 24,
@@ -114,10 +115,15 @@ describe("shouldRequestAgentDecision", () => {
             tick: 17,
             ticker: "AAA1",
             headline: "AAA1 secures mystery funding",
+            headlineZh: "AAA1获得神秘融资",
             headlineVariant: 0,
             tone: "bullish",
             accuracy: "real",
             impact: 0.04,
+            kind: "news",
+            scope: "ticker",
+            affectedTickers: ["AAA1"],
+            sourceAgent: "House Dealer",
           },
         ],
       }),

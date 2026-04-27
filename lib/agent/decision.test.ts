@@ -22,6 +22,7 @@ function buildMarket(closesByTicker: Record<string, number[]>): Market {
 
   return {
     seed: "test-seed",
+    worldClockKey: "28333333",
     style: "chop",
     totalDays: 1,
     ticksPerDay: 10,
@@ -53,10 +54,15 @@ describe("decideAction", () => {
           tick: 2,
           ticker: "AAA1",
           headline: "AAA1 teases a strategic partnership",
+          headlineZh: "AAA1 暗示重大合作",
           headlineVariant: 1,
           tone: "bullish",
           accuracy: "real",
           impact: 0.08,
+          kind: "news",
+          scope: "ticker",
+          affectedTickers: ["AAA1"],
+          sourceAgent: "House Dealer",
         },
       ],
       equity: 10_000,

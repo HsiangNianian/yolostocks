@@ -1,4 +1,8 @@
-import type { DecisionSource, RunningAgentState } from "@/lib/agent/types";
+import type {
+  DecisionAction,
+  DecisionSource,
+  RunningAgentState,
+} from "@/lib/agent/types";
 
 export type GamePhase = "idle" | "running" | "gameover";
 
@@ -29,6 +33,17 @@ export interface MuseumRecord {
   createdAt: string;
   seed: string;
   finalEquity: number;
+}
+
+export interface TradeAnnotation {
+  id: string;
+  tick: number;
+  ticker: string;
+  action: DecisionAction;
+  source: DecisionSource;
+  reason: string;
+  confidence: number;
+  executedPrice: number;
 }
 
 export type DecisionEngineStatus = "idle" | "thinking" | "ready" | "fallback" | "error";

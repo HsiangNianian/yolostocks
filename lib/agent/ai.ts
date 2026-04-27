@@ -100,7 +100,7 @@ function buildUserPrompt(input: AgentDecisionRequest): string {
       : input.news
           .map(
             (item) =>
-              `${item.ticker} ${item.headline} tone=${item.tone} accuracy=${item.accuracy} age=${item.ageTicks}`,
+              `${item.ticker} ${item.headline} kind=${item.kind} scope=${item.scope} source=${item.sourceAgent} tone=${item.tone} accuracy=${item.accuracy} age=${item.ageTicks}`,
           )
           .join("\n");
 

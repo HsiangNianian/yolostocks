@@ -54,6 +54,9 @@ export const agentDecisionRequestSchema = z.object({
     z.object({
       ticker: z.string(),
       headline: z.string(),
+      kind: z.enum(["news", "policy", "liquidity", "meme"]),
+      scope: z.enum(["ticker", "market"]),
+      sourceAgent: z.string(),
       tone: z.enum(["bullish", "bearish"]),
       accuracy: z.enum(["real", "fake"]),
       ageTicks: z.number().int().nonnegative(),
